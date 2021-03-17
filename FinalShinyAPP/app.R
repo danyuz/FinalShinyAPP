@@ -54,10 +54,11 @@ testing  <- data2[-inTraining,]
 
 
 # Define UI for application that draws a histogram
-ui <- navbarPage("Final Shiny App",
+ui <- navbarPage("Ramen Ratings Shiny App",
                  theme = shinytheme("sandstone"),
                  tabPanel("Description of Ramen Ratings",
-                          includeMarkdown("./Decription of Dataset.md")
+                          includeMarkdown("./Decription of Dataset.md"),
+                          downloadButton("report", "Generate report")
                  ),
                  tabPanel("Summary of Ramen Ratings",
                           verbatimTextOutput("ramenSummary")
@@ -91,8 +92,12 @@ ui <- navbarPage("Final Shiny App",
                                   )
                                         ), #  sidebarPanel
                               mainPanel(
-                                  plotOutput(outputId = "plot2")
-                              )
+                                  tabsetPanel(type = "tabs",
+                                              tabPanel("Specified Box Plot",plotOutput("plot2")),
+                                              tabPanel("Boxplot according to Countries", plotOutput("plot4")),
+                                              tabPanel("Boxplot according to Styles", plotOutput("plot5"))
+                                              
+                              ))
                           ) # sidebarLayout
                  ), # tabPanel
                  tabPanel("Top 10 Ramen according to Rating",
@@ -143,25 +148,17 @@ ui <- navbarPage("Final Shiny App",
                                   selectInput("MethodSelector", 
                                               choices = c("boot","cv","LOOCV","repeatedcv","none"), 
                                               label = h4("Select Tuning Method"),
-                                              selected = "repeatedcv"),
-                                  selectInput("numberSelector", 
-                                              choices = seq(1,10,1), 
-                                              label = h4("Select number of CV Method"),
-                                              selected = 5),
-                                  selectInput("repeatsSelector", 
-                                              choices = seq(1,10,1), 
-                                              label = h4("Select repeats times"),
-                                              selected = 5),
+                                              selected = "repeatedcv")
                                   
                               ), #  sidebarPanel
                               mainPanel(
                                   tabsetPanel(type = "tabs",
-                                      tabPanel("Plot", plotOutput("plot5")),
-                                      tabPanel("Model",verbatimTextOutput("Model")),
-                                      tabPanel("Prediction",verbatimTextOutput("Prediction"))                                  )
+                                      tabPanel("Model", verbatimTextOutput("Model")),
+                                      tabPanel("Prediction", verbatimTextOutput("Prediction"))                                  )
                               )# sidebarLayout   
                           )    
                  )
+                 
 ) # navbarPage
 
 
@@ -172,12 +169,12 @@ server <- function(input, output) {
     output$plot1 <- renderPlot({
         if(input$barSelector=="Style"){
             ggplot(aggregate(Stars ~ Style, data=data, mean), aes(x=Style, y = Stars)) +
-                geom_bar(color = "pink", fill = "pink", stat ="identity") +
+                geom_bar(color = "orange", fill = "orange", stat ="identity") +
                 theme(axis.text.x = element_text(angle = 90))
         }
         else{
             ggplot(aggregate(Stars ~ Country, data=data, mean), aes(x=Country, y = Stars)) +
-                geom_bar(color = "pink", fill = "pink", stat ="identity") +
+                geom_bar(color = "orange", fill = "orange", stat ="identity") +
                 theme(axis.text.x = element_text(angle = 90))
             
         }
@@ -187,7 +184,7 @@ server <- function(input, output) {
         data %>% filter(Country == input$plotSelector) %>% 
             filter(Style == input$plotSelector2) %>% 
             plot_ly(y = ~Stars, alpha = 0.1, boxpoints = "suspectedoutliers") %>% 
-            add_boxplot(x="Overall")
+            add_boxplot(x="Overall",color="orange")
     })
     
     output$plot3 <- renderPlot({
@@ -205,16 +202,53 @@ server <- function(input, output) {
             select(-c(Review..,year,top_ten)) 
     })
     
+    output$plot4 <- renderPlot({
+        data %>% plot_ly(y = ~Stars, alpha = 0.1, boxpoints = "suspectedoutliers") %>% 
+            add_boxplot(x= ~Country, color="orange")
+    })
+    
+    output$plot5 <- renderPlot({
+        data %>% plot_ly(y = ~Stars, alpha = 0.1, boxpoints = "suspectedoutliers") %>% 
+            add_boxplot(x= ~Style, color="orange")
+    })
+    
     output$Model <- renderPrint({
         train(Stars ~ ., data = training, 
               method = input$ModelSelector, 
-              trControl = trainControl(method = input$MethodSelector, number = input$numberSelector, repeats = input$repeatsSelector),
+              trControl = trainControl(method = input$MethodSelector),
               verbose = FALSE)$finalModel
     })
     
     output$Prediction <- renderPrint({
-        
+        predict(train(Stars ~ ., data = training, 
+                      method = input$ModelSelector, 
+                      trControl = trainControl(method = input$MethodSelector),
+                      verbose = FALSE),
+                newdata = testing)
     })
+    
+    output$report <- downloadHandler(
+        # For PDF output, change this to "report.pdf"
+        filename = "Ramen_Report.html",
+        content = function(file) {
+            # Copy the report file to a temporary directory before processing it, in
+            # case we don't have write permissions to the current working dir (which
+            # can happen when deployed).
+            tempReport <- file.path(tempdir(), "report.Rmd")
+            file.copy("report.Rmd", tempReport, overwrite = TRUE)
+            
+            # Set up parameters to pass to Rmd document
+            params <- list(n = input$slider)
+            
+            # Knit the document, passing in the `params` list, and eval it in a
+            # child of the global environment (this isolates the code in the document
+            # from the code in this app).
+            rmarkdown::render(tempReport, output_file = file,
+                              params = params,
+                              envir = new.env(parent = globalenv())
+            )
+        }
+    )
 }
 
 # Run the application 

@@ -1,6 +1,9 @@
 library(shiny)
 library(ggplot2)
 library(devtools)
+library(caret)
+library(fastDummies)
+library(randomForest)
 
 ## packages required to use
 library(tidyverse)
@@ -8,7 +11,10 @@ library(shinythemes)
 library(plotly)
 library(shinyjs)
 
-data <- read.csv("ramen-ratings.csv", header = TRUE)
+# trace errors
+options(shiny.trace=TRUE)
+
+data <- read.csv("../ramen-ratings.csv", header = TRUE)
 
 # Replacing unrated data with minimum of ratings
 data$Stars[data$Stars == 'Unrated'] <- min(data$Stars)
@@ -25,16 +31,31 @@ for (i in 1:length(data$top_ten)) {
         data$top_ten[i] = as.integer(substr(data$top_ten[i],3,4))
     }
 }
+
 data$top_ten[is.na(data$top_ten)] <- 0
 data$year[data$year == ""] <- 0
 data$year[data$year == "\n"] <- 0
 
 data <- data[,-7]
-data$year <- as.numeric(data$year)
+data$year <- as.factor(data$year)
 data$top_ten <- as.numeric(data$top_ten)
+data$Stars <- as.numeric(data$Stars)
+
+
+# Process for Machine Learning
+data2 <- dummy_cols(data, select_columns = c('Style','Country'),
+                      remove_selected_columns = TRUE)
+
+data2 <- data2 %>% select(-c(Review.., Variety))
+
+inTraining <- createDataPartition(data2$year, p = .75, list = FALSE)
+training <- data2[ inTraining,]
+testing  <- data2[-inTraining,]
+
 
 # Define UI for application that draws a histogram
 ui <- navbarPage("Final Shiny App",
+                 theme = shinytheme("sandstone"),
                  tabPanel("Description of Ramen Ratings",
                           includeMarkdown("./Decription of Dataset.md")
                  ),
@@ -46,33 +67,33 @@ ui <- navbarPage("Final Shiny App",
                               sidebarPanel(
                                   h2("Barplot Plot"),
                                   radioButtons("barSelector", 
-                                              choices = c("Countries", "Styles"), 
+                                              choices = c("Country", "Style"), 
                                               label = h4("Select")                                  )
                               ), #  sidebarPanel
                               mainPanel(
                                   plotOutput(outputId = "plot1")
                               )
-                          ), # sidebarLayout
+                          ) # sidebarLayout
                  ), # tabPanel
-                 tabPanel("Boxplot of Ratings of Ramen according to Country and Style",
+                 tabPanel("Boxplot of Ratings according to Country and Style",
                           sidebarLayout(
                               sidebarPanel(
                                   h2("Box Plot"),
-                                  selectInput("plotSelector", 
+                                  selectInput("plotSelector",
                                               choices = unique(data$Country), 
                                               label = h4("Select Country"),
                                               selected = sample(data$Country,1)
                                               ),
-                                  selectInput("plotSelector2", 
+                                  selectInput("plotSelector2",
                                               choices = unique(data$Style), 
                                               label = h4("Select Style"),
                                               selected = sample(data$Style,1)
-                                  ),
+                                  )
                                         ), #  sidebarPanel
                               mainPanel(
                                   plotOutput(outputId = "plot2")
                               )
-                          ), # sidebarLayout
+                          ) # sidebarLayout
                  ), # tabPanel
                  tabPanel("Top 10 Ramen according to Rating",
                           sidebarLayout(
@@ -80,119 +101,122 @@ ui <- navbarPage("Final Shiny App",
                                   h2("Top 10 Ramen"),
                                   checkboxGroupInput("toptenSelector", 
                                                     choices = unique(data$year[data$year != 0]), 
-                                                    label = h4("Select year")
-                                  ),
+                                                    label = h4("Select year"),
+                                                    selected = 2012
+                                  )
                               ), #  sidebarPanel
                               mainPanel(
                                   plotOutput(outputId = "plot3")
                               )
-                          ), # sidebarLayout
-                 )
+                          ) # sidebarLayout
+                 ),
                  tabPanel("Top 10 Ramen Details",
                           sidebarLayout(
                               sidebarPanel(
                                   h2("Decription of Top 10 Ramen"),
                                   numericInput("descripSelector", 
-                                               value = unique(data$year[data$year != 0]), 
+                                               min = 2012,
+                                               max = 2016,
+                                               step = 1,
+                                               value = 2012, 
                                                label = h4("Select year")
                                   ),
                                   numericInput("descripSelector2", 
                                                label = h4("Select Top 10"),
-                                               value = unique(data$top_ten[data$top_ten != 0]))
+                                               min = 1,
+                                               max = 10,
+                                               step = 1,
+                                               value = 1)
                               ), #  sidebarPanel
                               mainPanel(
                                   tableOutput(outputId = "descripTopten")
+                              ) # sidebarLayout
                               )
-                          ), # sidebarLayout
                  ),
                  tabPanel("Regression Models for Ratings",
                           sidebarLayout(
                               sidebarPanel(
-                                  h2("Variable to Predict Ratings"),
-                                  numericInput("VarSelector", 
-                                               value = colnames(data)[-6]), 
-                                               label = h4("Select Variable")
-                                  )
+                                  selectInput("ModelSelector", 
+                                              choices = c("rf","gbm","nn"), 
+                                              label = h4("Select Variable"),
+                                              selected = "rf"),
+                                  selectInput("MethodSelector", 
+                                              choices = c("boot","cv","LOOCV","repeatedcv","none"), 
+                                              label = h4("Select Tuning Method"),
+                                              selected = "repeatedcv"),
+                                  selectInput("numberSelector", 
+                                              choices = seq(1,10,1), 
+                                              label = h4("Select number of CV Method"),
+                                              selected = 5),
+                                  selectInput("repeatsSelector", 
+                                              choices = seq(1,10,1), 
+                                              label = h4("Select repeats times"),
+                                              selected = 5),
+                                  
                               ), #  sidebarPanel
                               mainPanel(
-                                  tableOutput(outputId = "Formula")
-                              )
-                          ) # sidebarLayout       
+                                  tabsetPanel(type = "tabs",
+                                      tabPanel("Plot", plotOutput("plot5")),
+                                      tabPanel("Model",verbatimTextOutput("Model")),
+                                      tabPanel("Prediction",verbatimTextOutput("Prediction"))                                  )
+                              )# sidebarLayout   
+                          )    
                  )
 ) # navbarPage
 
 
-
 # Define server logic required to draw a histogram
 server <- function(input, output) {
-    output$ramenSummary <- renderTable(summary(data))
+    output$ramenSummary <- renderPrint({summary(data)})
     
-    output$plot1 <- renderPlot(
-        data %>% filter(input$barSelector) %>% 
-            ggplot(aes(x=Stars),) +
-            geom_bar(color = "steelblue", fill = "steelblue") +
-            theme_classic()   
-    )
-    
-    output$plot2 <- renderPlot(
-        data %>% filter(input$plotSelector) %>% 
-            filter(input$plotSelector2) 
-        
-        
-    )
-        
-    output$plot3 <- renderPlot(
-        data %>% filter(toptenSelector) %>% 
-            
-    )
-        
-
-        
-    output$descripTopten <- renderTable(
-        for (year in 2012:2016) {
-            for (topten in 1:10) {
-                if(input$descripSelector == 2012) {
-                    if (input$descripSelector2 == 1) {
-                        data %>% subset(data$year==2012) %>% subset(data$top_ten==1)
-                    }
-                    else if (input$descripSelector2 == 2){
-                        
-                    }            
-                    else if (input$descripSelector2 == 3){
-                        
-                    }
-                    else if (input$descripSelector2 == 4){
-                        
-                    }
-                    else if (input$descripSelector2 == 5){
-                        
-                    }
-                    else if (input$descripSelector2 == 6){
-                        
-                    }
-                    else if (input$descripSelector2 == 7){
-                        
-                    }
-                    else if (input$descripSelector2 == 8){
-                        
-                    }
-                    else if (input$descripSelector2 == 9){
-                        
-                    }
-                    else if (input$descripSelector2 == 10){
-                        
-                    }
-                }
-                
-            }
+    output$plot1 <- renderPlot({
+        if(input$barSelector=="Style"){
+            ggplot(aggregate(Stars ~ Style, data=data, mean), aes(x=Style, y = Stars)) +
+                geom_bar(color = "pink", fill = "pink", stat ="identity") +
+                theme(axis.text.x = element_text(angle = 90))
         }
-    ) 
-        plot_ly(x=~Cast, y=~Rating, title="Relationship between casts and rating")
+        else{
+            ggplot(aggregate(Stars ~ Country, data=data, mean), aes(x=Country, y = Stars)) +
+                geom_bar(color = "pink", fill = "pink", stat ="identity") +
+                theme(axis.text.x = element_text(angle = 90))
+            
+        }
+    })
     
-    htmlwidgets::saveWidget(p,'plotly.html')
+    output$plot2 <- renderPlot({
+        data %>% filter(Country == input$plotSelector) %>% 
+            filter(Style == input$plotSelector2) %>% 
+            plot_ly(y = ~Stars, alpha = 0.1, boxpoints = "suspectedoutliers") %>% 
+            add_boxplot(x="Overall")
+    })
     
-    output$Formula <- renderText()
+    output$plot3 <- renderPlot({
+        data %>% filter(year == input$toptenSelector) %>% 
+            ggplot(aes(y=Stars,x=top_ten)) + 
+            geom_line(aes(color = year)) +
+            geom_point(aes(color = year)) +
+            ylim(0,5)+
+            xlim(1,10)
+        })
     
+    output$descripTopten <- renderTable({
+        data %>% filter(year == input$descripSelector) %>% 
+            filter(top_ten == input$descripSelector2) %>% 
+            select(-c(Review..,year,top_ten)) 
+    })
+    
+    output$Model <- renderPrint({
+        train(Stars ~ ., data = training, 
+              method = input$ModelSelector, 
+              trControl = trainControl(method = input$MethodSelector, number = input$numberSelector, repeats = input$repeatsSelector),
+              verbose = FALSE)$finalModel
+    })
+    
+    output$Prediction <- renderPrint({
+        
+    })
 }
+
 # Run the application 
 shinyApp(ui = ui, server = server)
+

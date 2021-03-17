@@ -1,0 +1,50 @@
+---
+title: "Ramen Report.Rmd"
+author: "Danyu Zhang"
+date: "2021/3/18"
+output: html_document
+params:
+  data: NA
+---
+
+The dataset used is the Ramen Ratings dataset taken from Kaggle, you can enter the [link](https://www.kaggle.com/residentmario/ramen-ratings) for more details. 
+
+The original dataset consists 7 variables which are the followings: 
+
+- **Review**: The reviewed number of each Ramen
+
+- **Brand**: The brand of the Ranmen
+
+- **Variety**: Details of the the Ramen
+
+- **Style**: The style (type) of the Ramen, e.g. Cup or Pack
+
+- **Stars**: The rating of the Ramen
+
+- **Country**: The original Country of the Ramen
+
+- **Top_ten**: indicates the rating of the Ramen from 1 to 10 for years 2012-2016
+
+We modify the data in order to be more comfortable to analyze it. Here is a example of it. 
+```{r}
+knitr::kable(
+    head(params$data),
+    booktabs=TRUE,
+    longtable=TRUE,
+    caption="caption"
+)
+```
+
+Boxplot of Ratings according to different different countries: 
+```{r}
+data %>% plot_ly(y = ~Stars, alpha = 0.1, boxpoints = "suspectedoutliers") %>% 
+  add_boxplot(x= ~Country, color="orange")
+
+```
+
+Boxplot of Ratings according to different Ramen types: 
+```{r}
+data %>% plot_ly(y = ~Stars, alpha = 0.1, boxpoints = "suspectedoutliers") %>% 
+  add_boxplot(x= ~Style, color="orange")
+```
+
